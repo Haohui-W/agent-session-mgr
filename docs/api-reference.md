@@ -1,4 +1,4 @@
-# API Reference
+﻿# API Reference
 
 Base URL: `http://localhost:8888`
 
@@ -73,7 +73,7 @@ interface SessionMessage {
 
 **示例**:
 ```bash
-curl "http://localhost:8888/api/sessions/messages?source=%2Fhome%2Fuser%2F.claude%2Fprojects%2F...jsonl&limit=10"
+curl "http://localhost:8888/api/sessions/messages?source=%2F~%2F.claude%2Fprojects%2F...jsonl&limit=10"
 ```
 
 ---
@@ -129,5 +129,5 @@ curl -X DELETE "http://localhost:8888/api/sessions?source=%2Fpath%2Fto%2Ffile.js
 
 **示例**:
 ```bash
-curl -X POST "http://localhost:8888/api/resume?command=claude%20--resume%20uuid&cwd=%2Fhome%2Fuser%2Fproject"
+curl -X POST "http://localhost:8888/api/resume?command=claude%20--resume%20uuid&cwd=%2F~%2Fproject"
 ```
