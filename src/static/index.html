@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session Manager</title>
+<style>
+:root {
+  --bg: #ffffff; --bg-secondary: #f8f9fa; --bg-hover: #f0f1f3;
+  --border: #e5e7eb; --text: #1f2937; --text-secondary: #6b7280; --text-muted: #9ca3af;
+  --primary: #3b82f6; --primary-light: #eff6ff; --primary-border: #bfdbfe;
+  --emerald: #059669; --emerald-bg: #ecfdf5; --emerald-border: #a7f3d0;
+  --blue: #2563eb; --blue-bg: #eff6ff; --blue-border: #bfdbfe;
+  --purple: #7c3aed; --purple-bg: #f5f3ff; --purple-border: #ddd6fe;
+  --amber: #d97706; --amber-bg: #fffbeb; --amber-border: #fde68a;
+  --red: #dc2626; --red-bg: #fef2f2; --red-border: #fecaca;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1b1e; --bg-secondary: #25262b; --bg-hover: #2c2e33;
+    --border: #373a40; --text: #e5e7eb; --text-secondary: #9ca3af; --text-muted: #6b7280;
+    --primary: #60a5fa; --primary-light: #1e3a5f; --primary-border: #1e3a5f;
+    --emerald: #34d399; --emerald-bg: #064e3b; --emerald-border: #065f46;
+    --blue: #60a5fa; --blue-bg: #1e3a5f; --blue-border: #1e40af;
+    --purple: #a78bfa; --purple-bg: #2e1065; --purple-border: #4c1d95;
+    --amber: #fbbf24; --amber-bg: #451a03; --amber-border: #78350f;
+    --red: #f87171; --red-bg: #450a0a; --red-border: #7f1d1d;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+header h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.search-wrap { position: relative; flex: 1; }
+.search-wrap input { width: 100%; padding: 5px 30px 5px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; background: var(--bg); color: var(--text); }
+.search-wrap input:focus { outline: none; border-color: var(--primary); }
+.search-wrap .clear-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
+.main { display: flex; flex: 1; overflow: hidden; }
+.sidebar { width: 360px; min-width: 220px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.sidebar-resize { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; z-index: 10; }
+.sidebar-resize:hover, .sidebar-resize.dragging { background: var(--primary); }
+.session-list { flex: 1; overflow-y: auto; padding: 4px 6px; min-height: 0; }
+
+.folder-group { margin-bottom: 1px; }
+.folder-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; border-radius: var(--radius); user-select: none; transition: background 0.1s; }
+.folder-header:hover { background: var(--bg-hover); }
+.folder-header .arrow { font-size: 10px; color: var(--text-muted); width: 14px; flex-shrink: 0; text-align: center; transition: transform 0.15s; display: inline-block; }
+.folder-header .arrow.collapsed { transform: rotate(-90deg); }
+.folder-header .folder-icon { font-size: 14px; flex-shrink: 0; }
+.folder-header .folder-name { flex: 1; font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-header .folder-count { font-size: 10.5px; color: var(--text-muted); background: var(--bg-secondary); padding: 1px 6px; border-radius: 999px; flex-shrink: 0; }
+.folder-children { overflow: hidden; }
+
+.session-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 24px; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent; margin: 1px 0; transition: all 0.1s; }
+.session-item:hover { background: var(--bg-hover); }
+.session-item.active { background: var(--primary-light); border-color: var(--primary-border); }
+.session-item.checked { background: var(--primary-light); border-color: var(--primary-border); }
+.session-item .info { flex: 1; min-width: 0; }
+.session-item .title { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item .meta { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; display: flex; align-items: center; gap: 6px; }
+
+.detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.detail-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.detail-header { padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.detail-header .dt-title { font-size: 15px; font-weight: 600; }
+.detail-header .dt-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.detail-header .dt-meta span { display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+.detail-header .dt-meta span:hover { color: var(--text); }
+.resume-bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 10px; background: var(--bg-secondary); border-radius: var(--radius); font-size: 12px; font-family: monospace; }
+.resume-bar code { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-header-bar { padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.msg-container { flex: 1; overflow-y: auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+
+.msg { border-radius: var(--radius); border: 1px solid; padding: 10px 14px; position: relative; }
+.msg.user { background: var(--emerald-bg); border-color: var(--emerald-border); margin-left: 32px; }
+.msg.assistant { background: var(--blue-bg); border-color: var(--blue-border); margin-right: 32px; }
+.msg.tool { background: var(--purple-bg); border-color: var(--purple-border); }
+.msg.system { background: var(--amber-bg); border-color: var(--amber-border); }
+.msg .msg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; }
+.msg .msg-role { font-weight: 600; }
+.msg.user .msg-role { color: var(--emerald); }
+.msg.assistant .msg-role { color: var(--blue); }
+.msg.tool .msg-role { color: var(--purple); }
+.msg.system .msg-role { color: var(--amber); }
+.msg .msg-time { color: var(--text-muted); }
+.msg .msg-content { font-size: 13px; line-height: 1.6; word-break: break-word; }
+.msg .msg-content p { margin: 0.5em 0; }
+.msg .msg-content p:first-child { margin-top: 0; }
+.msg .msg-content p:last-child { margin-bottom: 0; }
+.msg .msg-content h1, .msg .msg-content h2, .msg .msg-content h3 { margin: 0.8em 0 0.3em; font-size: 1.1em; }
+.msg .msg-content ul, .msg .msg-content ol { margin: 0.3em 0; padding-left: 1.5em; }
+.msg .msg-content code { font-family: monospace; font-size: 0.9em; background: var(--bg-secondary); padding: 1px 4px; border-radius: 3px; }
+.msg .msg-content pre { margin: 0.5em 0; padding: 10px 14px; background: var(--bg-secondary); border-radius: var(--radius); overflow-x: auto; font-size: 12px; line-height: 1.45; }
+.msg .msg-content pre code { background: none; padding: 0; font-size: inherit; }
+.msg .msg-content blockquote { margin: 0.5em 0; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.msg .msg-content table { border-collapse: collapse; margin: 0.5em 0; font-size: 12px; }
+.msg .msg-content th, .msg .msg-content td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.msg .msg-content th { background: var(--bg-secondary); }
+.msg .msg-content hr { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
+.session-details { margin: 0.5em 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; }
+.session-details summary { cursor: pointer; font-weight: 600; font-size: 12px; color: var(--text-secondary); user-select: none; padding: 2px 0; }
+.session-details summary:hover { color: var(--text); }
+.session-details pre { margin-top: 8px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.thinking-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; margin-top: 6px; }
+.msg .msg-content.collapsed { max-height: 400px; overflow: hidden; position: relative; }
+.msg .msg-content.collapsed::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: linear-gradient(transparent, var(--emerald-bg)); }
+.msg.assistant .msg-content.collapsed::after { background: linear-gradient(transparent, var(--blue-bg)); }
+.msg.tool .msg-content.collapsed::after { background: linear-gradient(transparent, var(--purple-bg)); }
+.msg.system .msg-content.collapsed::after { background: linear-gradient(transparent, var(--amber-bg)); }
+.msg .copy-btn { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; opacity: 0; transition: opacity 0.15s; }
+.msg:hover .copy-btn { opacity: 1; }
+.msg .expand-btn { font-size: 11px; color: var(--text-secondary); cursor: pointer; margin-top: 4px; background: none; border: none; display: flex; align-items: center; gap: 4px; }
+.msg .expand-btn:hover { color: var(--text); }
+
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); padding: 40px; }
+.empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn { padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; cursor: pointer; background: var(--bg); color: var(--text); display: inline-flex; align-items: center; gap: 4px; transition: all 0.12s; white-space: nowrap; }
+.btn:hover { background: var(--bg-hover); }
+.btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn.danger { color: var(--red); border-color: var(--red-border); }
+.btn.danger:hover { background: var(--red-bg); }
+.btn.sm { padding: 3px 8px; font-size: 11px; }
+.badge { font-size: 11px; background: var(--bg-secondary); padding: 1px 7px; border-radius: 999px; color: var(--text-secondary); flex-shrink: 0; }
+
+.batch-bar { padding: 5px 12px; background: var(--primary-light); border-bottom: 1px solid var(--primary-border); display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.batch-bar .count { font-weight: 600; color: var(--primary); }
+.sess-check { width: 16px; flex-shrink: 0; accent-color: var(--primary); cursor: pointer; }
+.folder-check { width: 14px; flex-shrink: 0; accent-color: var(--primary); cursor: pointer; }
+
+.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.dialog { background: var(--bg); border-radius: 12px; padding: 24px; max-width: 440px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.dialog h3 { font-size: 16px; margin-bottom: 8px; }
+.dialog p { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; white-space: pre-wrap; }
+.dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 16px; border-radius: var(--radius); font-size: 13px; background: var(--bg); border: 1px solid var(--border); animation: slideIn 0.2s ease-out; }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 Claude Code 会话管理 <span class="badge" id="totalCount">0</span></h1>
+  <div style="display:flex;gap:6px">
+    <button class="btn sm" id="batchBtn" title="批量管理">☑</button>
+    <button class="btn sm" id="refreshBtn" title="刷新">↻</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <input type="text" id="searchInput" placeholder="搜索会话..." onkeydown="if(event.key==='Escape')this.value='';renderSessionList()">
+    <button class="clear-btn" id="clearSearch" style="display:none" onclick="document.getElementById('searchInput').value='';renderSessionList();this.style.display='none'">✕</button>
+  </div>
+</div>
+
+<div class="batch-bar" id="batchBar" style="display:none">
+  <span>已选 <span class="count" id="selectedCount">0</span> 项</span>
+  <button class="btn sm" onclick="selectAll()">全选</button>
+  <button class="btn sm" onclick="checkedSessions.clear();renderSessionList()">清空</button>
+  <button class="btn sm danger" onclick="batchDeleteConfirm()">🗑 批量删除</button>
+  <button class="btn sm" onclick="toggleBatchMode()">退出</button>
+</div>
+
+<div class="main">
+  <aside class="sidebar" id="sidebarEl">
+    <div class="sidebar-resize" onmousedown.prevent="startResize(event)"></div>
+    <div class="session-list" id="sessionList">
+      <div class="empty"><div class="spinner"></div><p>加载中...</p></div>
+    </div>
+  </aside>
+
+  <section class="detail">
+    <div class="empty" id="detailEmpty">
+      <div class="icon">💬</div>
+      <p>选择一个会话查看详情</p>
+    </div>
+    <div class="detail-body" id="detailBody" style="display:none">
+      <div class="detail-header" id="detailHeader"></div>
+      <div class="msg-header-bar">
+        <span>💬 对话记录</span>
+        <span class="badge" id="msgCount">0</span>
+      </div>
+      <div class="msg-container" id="messagesContainer"></div>
+    </div>
+  </section>
+</div>
+
+<div class="dialog-overlay" id="deleteDialog" style="display:none" onclick="if(event.target===this)closeDeleteDialog()">
+  <div class="dialog">
+    <h3>删除会话</h3>
+    <p id="deleteDialogMsg"></p>
+    <div class="dialog-actions">
+      <button class="btn" onclick="closeDeleteDialog()">取消</button>
+      <button class="btn danger" id="deleteConfirmBtn" onclick="doDelete()">删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+<script>
+// ── State ──
+const API = '/api', PAGE_SIZE = 50;
+let sessions = [], selectedSession = null;
+let messages = { items: [], total: 0, offset: 0, source: '', loading: false };
+let batchMode = false, checkedSessions = new Set(), collapsedFolders = new Set(), deleteTarget = null;
+
+// ── API ──
+async function api(url, opts) { const r = await fetch(url, opts); if (!r.ok) throw Error(`HTTP ${r.status}`); return r.json(); }
+async function refresh() {
+  try { sessions = await api(API + '/sessions'); renderSessionList(); document.getElementById('totalCount').textContent = sessions.length; }
+  catch(e) { document.getElementById('sessionList').innerHTML = '<div class="empty"><p>加载失败</p></div>'; }
+}
+// Backend returns newest-first. We reverse for display: oldest→newest, top→bottom.
+async function loadMessages(source, loadOlder) {
+  if (messages.loading) return; messages.loading = true;
+  const c = document.getElementById('messagesContainer');
+  if (!loadOlder) { messages = { items:[], total:0, offset:0, source, loading: true }; c.innerHTML = '<div class="empty"><div class="spinner"></div></div>'; }
+  try {
+    const r = await api(`${API}/sessions/messages?source=${encodeURIComponent(source)}&offset=${messages.offset}&limit=${PAGE_SIZE}`);
+    messages.total = r.total; messages.source = source;
+    const batch = r.messages.reverse(); // newest-first → oldest-first
+    if (loadOlder) {
+      const prevH = c.scrollHeight;
+      messages.items = batch.concat(messages.items);
+      messages.offset += batch.length;
+      renderMessages();
+      c.scrollTop = c.scrollHeight - prevH;
+    } else {
+      messages.items = batch;
+      messages.offset += batch.length;
+      renderMessages();
+      c.scrollTop = c.scrollHeight;
+    }
+  } catch(e) { if (!loadOlder) c.innerHTML = '<div class="empty"><p>加载失败</p></div>'; }
+  messages.loading = false;
+}
+
+// Scroll-to-top detection for infinite scroll
+function loadMore() { if (!messages.loading) loadMessages(messages.source, true); }
+function onMsgScroll() {
+  if (messages.offset >= messages.total) return;
+  if (document.getElementById('messagesContainer').scrollTop < 80) loadMore();
+}
+async function resumeSession(command, cwd) {
+  try {
+    const r = await fetch(`${API}/resume?command=${encodeURIComponent(command)}&cwd=${encodeURIComponent(cwd)}`, {method:'POST'});
+    const d = await r.json();
+    if (d.success) toast('✅ 已启动终端');
+    else toast('❌ ' + (d.error||'启动失败'));
+  } catch(e) { toast('❌ '+e.message); }
+}
+async function delSession(sessionId, source) {
+  const r = await fetch(`${API}/sessions?source=${encodeURIComponent(source)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  return r.json();
+}
+
+// ── Helpers ──
+function basename(p) { if (!p) return ''; const parts = p.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean); return parts[parts.length-1]||p; }
+function fullTime(ts) { if (!ts) return ''; return new Date(ts).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function relativeTime(ts) {
+  if (!ts) return ''; const d = Date.now()-ts, m = Math.floor(d/60000), h = Math.floor(d/3600000), day = Math.floor(d/86400000);
+  if (m<1) return '刚刚'; if (m<60) return `${m}分钟前`; if (h<24) return `${h}小时前`; if (day<7) return `${day}天前`;
+  return new Date(ts).toLocaleDateString('zh-CN');
+}
+function titleOf(s) { return s.title || basename(s.projectDir) || s.sessionId.slice(0,8); }
+function skey(s) { return s.sessionId + ':' + (s.sourcePath||''); }
+function displayPath(f) { const p = f.replace(/\/+$/,'').split('/').filter(Boolean); return p.length<=2 ? f : '…/' + p.slice(-3).join('/'); }
+function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function escapeAttr(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+// ── Filter & Group ──
+function filtered() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  if (!q) return sessions;
+  return sessions.filter(s => {
+    const hay = [titleOf(s), s.summary||'', basename(s.projectDir)||'', s.sessionId||''].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+}
+function grouped() {
+  const m = new Map();
+  for (const s of filtered()) { const d = s.projectDir||'__no__'; if (!m.has(d)) m.set(d,[]); m.get(d).push(s); }
+  for (const v of m.values()) v.sort((a,b)=>(b.lastActiveAt||b.createdAt||0)-(a.lastActiveAt||a.createdAt||0));
+  const e = [...m.entries()]; e.sort((a,b)=>(b[1][0].lastActiveAt||b[1][0].createdAt||0)-(a[1][0].lastActiveAt||a[1][0].createdAt||0));
+  return e.map(([dir,items])=>({dir,label:dir==='__no__'?'无项目目录':displayPath(dir),no:dir==='__no__',items}));
+}
+
+// ── Render Sessions ──
+function renderSessionList() {
+  const g = grouped(), c = document.getElementById('sessionList');
+  if (g.length===0) { c.innerHTML = '<div class="empty"><p>😴 没有找到会话</p></div>'; return; }
+  let h = '';
+  for (const grp of g) {
+    const gid = 'g_' + grp.dir.replace(/[^a-zA-Z0-9]/g,'_'), collapsed = collapsedFolders.has(gid), gkey = 'group:'+grp.dir;
+    h += '<div class="folder-group">';
+    h += '<div class="folder-header" onclick="toggleFolder(\''+gid+'\')">';
+    if (batchMode) h += '<span class="folder-check" onclick="event.stopPropagation();toggleGroupCheck(\''+gkey+'\')"><input type="checkbox" style="pointer-events:none"></span>';
+    h += '<span class="arrow'+(collapsed?' collapsed':'')+'">▼</span><span class="folder-icon">'+(grp.no?'📂':'📁')+'</span>';
+    h += '<span class="folder-name" title="'+escapeAttr(grp.dir)+'">'+escapeHtml(grp.label)+'</span><span class="folder-count">'+grp.items.length+'</span></div>';
+    h += '<div class="folder-children" id="'+gid+'" style="'+(collapsed?'display:none':'')+'">';
+    for (const s of grp.items) {
+      const k = skey(s), active = selectedSession && skey(selectedSession)===k, checked = checkedSessions.has(k);
+      h += '<div class="session-item'+(active?' active':'')+(batchMode&&checked?' checked':'')+'" onclick="onSessionClick(\''+k+'\')">';
+      if (batchMode) h += '<input type="checkbox" class="sess-check" '+(checked?'checked ':'')+(!s.sourcePath?'disabled ':'')+'onclick="event.stopPropagation();toggleCheck(\''+k+'\')">';
+      h += '<div class="info"><div class="title">'+escapeHtml(titleOf(s))+'</div><div class="meta"><span>🕐 '+relativeTime(s.lastActiveAt||s.createdAt)+'</span><span style="font-family:monospace;font-size:10px;flex-shrink:0;margin-left:auto">'+escapeHtml(s.sessionId.slice(0,8))+'</span></div></div></div>';
+    }
+    h += '</div></div>';
+  }
+  c.innerHTML = h;
+}
+
+// ── Session Click ──
+function onSessionClick(key) {
+  const s = sessions.find(x => skey(x)===key); if (!s) return;
+  selectedSession = s;
+  renderSessionList();
+  // Detail
+  document.getElementById('detailEmpty').style.display = 'none';
+  document.getElementById('detailBody').style.display = '';
+  document.getElementById('msgCount').textContent = '0';
+  document.getElementById('messagesContainer').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  document.getElementById('detailHeader').innerHTML =
+    '<div class="dt-title">'+escapeHtml(titleOf(s))+'</div>'+
+    '<div class="dt-meta">'+
+    '<span onclick="copyText(\''+escapeAttr(s.projectDir||'')+'\')" title="点击复制">📁 '+escapeHtml(basename(s.projectDir))+'</span>'+
+    '<span>🕐 '+fullTime(s.lastActiveAt||s.createdAt)+'</span>'+
+    (s.sourcePath?'<span onclick="copyText(\''+escapeAttr(s.sourcePath)+'\')" title="点击复制">📄 '+escapeHtml(basename(s.sourcePath))+'</span>':'')+
+    '</div>'+
+    (s.resumeCommand ? '<div class="resume-bar"><code>'+escapeHtml(s.resumeCommand)+'</code><button class="btn sm" onclick="copyText(\''+escapeAttr(s.resumeCommand)+'\')">📋</button></div>' : '')+
+    '<div style="margin-top:8px;display:flex;gap:8px">'+
+    (s.resumeCommand?'<button class="btn primary sm" onclick="resumeSession(\''+escapeAttr(s.resumeCommand)+'\',\''+escapeAttr(s.projectDir||'')+'\')">▶ 恢复</button>':'')+
+    '<button class="btn danger sm" onclick="confirmDelete(\''+s.sessionId+'\',\''+escapeAttr(s.sourcePath||'')+'\')">🗑 删除</button></div>';
+  if (s.sourcePath) loadMessages(s.sourcePath, false);
+}
+
+// ── Render Messages ──
+function renderMessages() {
+  const c = document.getElementById('messagesContainer'), ce = document.getElementById('msgCount');
+  if (messages.items.length===0) { c.innerHTML='<div class="empty"><p>暂无消息</p></div>'; ce.textContent='0'; return; }
+  ce.textContent = messages.offset + ' / ' + messages.total;
+  c.innerHTML = messages.items.map((m,i) => {
+    const role = m.role.toLowerCase(), isLong = m.content.length > 3000;
+    const label = {user:'You',assistant:'AI',tool:'Tool',system:'System'}[role]||role;
+    return '<div class="msg '+role+'"><button class="copy-btn" onclick="copyText(\''+escapeAttr(m.content)+'\')">📋</button>'+
+      '<div class="msg-head"><span class="msg-role">'+label+'</span>'+(m.ts?'<span class="msg-time">'+fullTime(m.ts)+'</span>':'')+'</div>'+
+      '<div class="msg-content'+(isLong?' collapsed':'')+'" id="m-'+i+'">'+marked.parse(m.content)+'</div>'+
+      (isLong?'<button class="expand-btn" onclick="toggleExpand('+i+')">▼ 展开 ('+Math.round(m.content.length/1000)+'k)</button>':'')+'</div>';
+  }).join('') + (messages.offset < messages.total ? '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:11px">↑ 向上滚动加载更早的消息</div>' : '');
+}
+function toggleExpand(i) {
+  const el = document.getElementById('m-'+i), btn = el.nextElementSibling;
+  if (el.classList.contains('collapsed')) { el.classList.remove('collapsed'); btn.textContent='▲ 收起'; }
+  else { el.classList.add('collapsed'); btn.textContent='▼ 展开 ('+Math.round(messages.items[i].content.length/1000)+'k)'; }
+}
+
+// ── Folder ──
+function toggleFolder(id) { if (collapsedFolders.has(id)) collapsedFolders.delete(id); else collapsedFolders.add(id); renderSessionList(); }
+
+// ── Batch ──
+function toggleBatchMode() { batchMode=!batchMode; if(!batchMode) checkedSessions.clear(); updateBatchUI(); renderSessionList(); }
+function updateBatchUI() { document.getElementById('batchBar').style.display=batchMode?'flex':'none'; document.getElementById('batchBtn').textContent=batchMode?'☑ (退出)':'☑'; document.getElementById('selectedCount').textContent=checkedSessions.size; }
+function toggleCheck(key) { if(checkedSessions.has(key)) checkedSessions.delete(key); else checkedSessions.add(key); updateBatchUI(); renderSessionList(); }
+function selectAll() { filtered().filter(s=>s.sourcePath).forEach(s=>checkedSessions.add(skey(s))); updateBatchUI(); renderSessionList(); }
+function toggleGroupCheck(gkey) {
+  const keys = grouped().find(g=>'group:'+g.dir===gkey)?.items.filter(s=>s.sourcePath).map(s=>skey(s)) || [];
+  const all = keys.every(k=>checkedSessions.has(k));
+  if (all) keys.forEach(k=>checkedSessions.delete(k)); else keys.forEach(k=>checkedSessions.add(k));
+  updateBatchUI(); renderSessionList();
+}
+
+// ── Delete ──
+function confirmDelete(sessionId, sourcePath) {
+  const s = sessions.find(x=>x.sessionId===sessionId);
+  deleteTarget = { sessionId, sourcePath, title: s ? titleOf(s) : sessionId };
+  document.getElementById('deleteDialogMsg').textContent = '将永久删除会话"'+deleteTarget.title+'"\nSession ID: '+sessionId+'\n\n此操作不可恢复。';
+  document.getElementById('deleteDialog').style.display='flex';
+}
+function batchDeleteConfirm() {
+  if (checkedSessions.size===0) return;
+  const targets = []; for (const k of checkedSessions) { const s = sessions.find(x=>skey(x)===k); if(s&&s.sourcePath) targets.push(s); }
+  if (targets.length===0) return;
+  deleteTarget = { _batch:true, _targets:targets };
+  document.getElementById('deleteDialogMsg').textContent = '将永久删除 '+targets.length+' 个会话。\n\n此操作不可恢复。';
+  document.getElementById('deleteDialog').style.display='flex';
+}
+async function doDelete() {
+  if (!deleteTarget) return;
+  if (deleteTarget._batch) { let ok=0,fail=0; for(const s of deleteTarget._targets){try{const r=await delSession(s.sessionId,s.sourcePath);if(r.success){ok++;sessions=sessions.filter(x=>skey(x)!==skey(s))}else fail++}catch(e){fail++}} toast('✅ 已删除 '+ok+' 个'+(fail>0?', '+fail+' 个失败':'')); checkedSessions.clear(); }
+  else { try{const r=await delSession(deleteTarget.sessionId,deleteTarget.sourcePath);if(r.success){toast('✅ 已删除');sessions=sessions.filter(s=>skey(s)!==deleteTarget.sessionId+':'+(deleteTarget.sourcePath||''));if(selectedSession&&selectedSession.sessionId===deleteTarget.sessionId){selectedSession=null;document.getElementById('detailEmpty').style.display='';document.getElementById('detailBody').style.display='none'}} else toast('❌ '+ (r.error||'删除失败'))}catch(e){toast('❌ '+e.message)} }
+  document.getElementById('totalCount').textContent = sessions.length;
+  renderSessionList(); closeDeleteDialog();
+}
+function closeDeleteDialog() { document.getElementById('deleteDialog').style.display='none'; deleteTarget=null; }
+
+// ── Copy / Toast ──
+async function copyText(t) { if(!t)return; try{await navigator.clipboard.writeText(t);toast('✅ 已复制')}catch(e){toast('❌ 复制失败')} }
+function toast(m) { const el=document.createElement('div');el.className='toast';el.textContent=m;document.getElementById('toastContainer').appendChild(el);setTimeout(()=>el.remove(),2500); }
+
+// ── Sidebar resize ──
+function startResize(e) {
+  const el = document.getElementById('sidebarEl'); const sx=e.clientX, sw=el.offsetWidth;
+  const mv=(ev)=>{el.style.width=Math.max(220,Math.min(600,sw+ev.clientX-sx))+'px'};
+  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up)};
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
+
+// ── Events ──
+document.getElementById('searchInput').addEventListener('input', function(){
+  document.getElementById('clearSearch').style.display = this.value ? 'block' : 'none';
+  renderSessionList();
+});
+document.getElementById('refreshBtn').onclick = async ()=>{
+  await refresh();
+  if (selectedSession) { const s = sessions.find(x=>skey(x)===skey(selectedSession)); if(s){selectedSession=s;onSessionClick(skey(s))} else {selectedSession=null;document.getElementById('detailEmpty').style.display='';document.getElementById('detailBody').style.display='none'} }
+  toast('✅ 已刷新');
+};
+document.getElementById('batchBtn').onclick = toggleBatchMode;
+document.addEventListener('keydown', e => {
+  if (e.target.tagName==='INPUT') return;
+  if (e.key==='j'||e.key==='k') { e.preventDefault(); const all=filtered(); if(!all.length)return; const cur=selectedSession?all.findIndex(s=>skey(s)===skey(selectedSession)):-1; const next=e.key==='j'?Math.min(all.length-1,cur+1):Math.max(0,cur-1); onSessionClick(skey(all[next])); }
+});
+
+// ── Init ──
+document.getElementById('messagesContainer').addEventListener('scroll', onMsgScroll);
+refresh();
+</script>
+</body>
+</html>
