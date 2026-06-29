@@ -1,14 +1,13 @@
-mod session_manager;
+﻿mod session_manager;
 
 use axum::{
     extract::Query,
     http::StatusCode,
-    response::Json,
+    response::{Html, Json},
     routing::{delete, get, post},
     Router,
 };
 use serde::Deserialize;
-use tower_http::services::ServeDir;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Deserialize)]
@@ -70,7 +69,7 @@ async fn resume_session(
 fn terminal_candidates(command: &str, cwd: &str) -> Vec<std::process::Command> {
     let mut cmds: Vec<std::process::Command> = Vec::new();
 
-    // ── macOS: AppleScript via osascript ──
+    // macOS: AppleScript via osascript
     #[cfg(target_os = "macos")]
     {
         let esc = cwd.replace('\'', "'\\''");
@@ -85,7 +84,7 @@ fn terminal_candidates(command: &str, cwd: &str) -> Vec<std::process::Command> {
         }
     }
 
-    // ── Windows: cmd or wt ──
+    // Windows: cmd or wt
     #[cfg(target_os = "windows")]
     {
         let mut c1 = std::process::Command::new("cmd");
@@ -97,7 +96,7 @@ fn terminal_candidates(command: &str, cwd: &str) -> Vec<std::process::Command> {
         cmds.push(c2);
     }
 
-    // ── Linux: try various terminal emulators ──
+    // Linux: try various terminal emulators
     #[cfg(target_os = "linux")]
     {
         let shell_cmd = format!("cd \"{cwd}\" && {command}; exec $SHELL");
@@ -142,7 +141,7 @@ fn launch_terminal(command: &str, cwd: Option<&str>) -> Result<(), String> {
         }
     }
 
-    Err(format!("未找到可用终端。请手动执行: {command}"))
+    Err(format!("no terminal found; run manually: {command}"))
 }
 
 async fn delete_session_handler(
@@ -152,6 +151,10 @@ async fn delete_session_handler(
         Ok(_) => Json(DeleteResult { success: true, error: None }),
         Err(e) => Json(DeleteResult { success: false, error: Some(e) }),
     }
+}
+
+async fn serve_index() -> Html<&'static str> {
+    Html(include_str!("static/index.html"))
 }
 
 #[tokio::main]
@@ -166,7 +169,7 @@ async fn main() {
         .route("/api/sessions/messages", get(get_messages))
         .route("/api/sessions", delete(delete_session_handler))
         .route("/api/resume", post(resume_session))
-        .nest_service("/", ServeDir::new("src/static"))
+        .fallback(get(serve_index))
         .layer(cors);
 
     let addr = "0.0.0.0:8888";
