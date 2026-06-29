@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -148,6 +148,7 @@ header h1 { font-size: 16px; font-weight: 600; display: flex; align-items: cente
   <div style="display:flex;gap:6px">
     <button class="btn sm" id="batchBtn" title="批量管理">☑</button>
     <button class="btn sm" id="refreshBtn" title="刷新">↻</button>
+    <button class="btn sm danger" onclick="shutdownServer()" title="关闭服务器">⏻</button>
   </div>
 </header>
 
@@ -256,6 +257,22 @@ async function resumeSession(command, cwd) {
     else toast('❌ ' + (d.error||'启动失败'));
   } catch(e) { toast('❌ '+e.message); }
 }
+
+async function shutdownServer() {
+  try {
+    const r = await fetch(API+'/shutdown', {method:'POST'});
+    const d = await r.json();
+    if (d.success) {
+      toast('服务器已关闭');
+      setTimeout(() => {
+        document.body.innerHTML = '<div class="empty"><div class="icon">⏻</div><p>服务器已关闭，可以关闭此窗口。</p></div>';
+      }, 300);
+    } else {
+      toast('关闭失败: ' + (d.error || '未知错误'));
+    }
+  } catch(e) { toast('关闭失败: '+e.message); }
+}
+
 async function delSession(sessionId, source) {
   const r = await fetch(`${API}/sessions?source=${encodeURIComponent(source)}&session_id=${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
   return r.json();

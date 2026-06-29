@@ -1,13 +1,15 @@
 ﻿mod session_manager;
 
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::StatusCode,
     response::{Html, Json},
     routing::{delete, get, post},
     Router,
 };
 use serde::Deserialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Deserialize)]
@@ -157,6 +159,11 @@ async fn serve_index() -> Html<&'static str> {
     Html(include_str!("static/index.html"))
 }
 
+async fn shutdown(State(flag): State<Arc<AtomicBool>>) -> Json<DeleteResult> {
+    flag.store(true, Ordering::SeqCst);
+    Json(DeleteResult { success: true, error: None })
+}
+
 #[tokio::main]
 async fn main() {
     let cors = CorsLayer::new()
@@ -164,12 +171,16 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
     let app = Router::new()
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/messages", get(get_messages))
         .route("/api/sessions", delete(delete_session_handler))
         .route("/api/resume", post(resume_session))
+        .route("/api/shutdown", post(shutdown))
         .fallback(get(serve_index))
+        .with_state(shutdown_flag.clone())
         .layer(cors);
 
     let addr = "0.0.0.0:8888";
@@ -189,5 +200,20 @@ async fn main() {
     }
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let server = axum::serve(listener, app);
+
+    tokio::select! {
+        _ = server => {},
+        _ = async {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if shutdown_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+        } => {},
+    }
+
+    println!("Server stopped.");
+    std::process::exit(0);
 }
